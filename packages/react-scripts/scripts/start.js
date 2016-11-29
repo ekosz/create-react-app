@@ -17,6 +17,9 @@ process.env.NODE_ENV = 'development';
 // https://github.com/motdotla/dotenv
 require('dotenv').config({silent: true});
 
+var path = require('path');
+var readline = require('readline');
+var fs = require('fs');
 var chalk = require('chalk');
 var webpack = require('webpack');
 var WebpackDevServer = require('webpack-dev-server');
@@ -162,6 +165,52 @@ function onProxyError(proxy) {
 }
 
 function addMiddleware(devServer) {
+  // Internal route for fetching the source code of a file
+  // Query Params:
+  //   path - The webpack path of the file to read
+  //   lineNumber - The line number to read around
+  //   before - (optional, default 5) The amount of lines to read before the lineNumber
+  //   after - (optional, default 5) The amount of lines to read after the lineNumber
+  devServer.use('/_react-scripts/sourceCode', (req, res) => {
+    var rawPath = req.query.path;
+    var filePath;
+    // TODO: Figure out how to extract filePath correctly
+    // Can we use the webpack resolvers here?
+    if (rawPath.startsWith('webpack://')) {
+      filePath = rawPath.replace('webpack://', './').replace(/\/~\//g, '/node_modules/');
+      filePath = path.resolve(filePath);
+    }
+    var before = req.query.before ? Number(req.query.before) : 5;
+    var after = req.query.after ? Number(req.query.after) : 5;
+    var lineNumber = Number(req.query.lineNumber);
+    var beforeLineNumber = Math.max(1, lineNumber - before);
+    var afterLineNumber = lineNumber + after;
+
+    // Create line reader for smaller memory footprint
+    var fileStream = fs.createReadStream(filePath)
+    var rl = readline.createInterface({
+      input: fileStream,
+    });
+
+    var currentLineNumber = 0;
+    var collectedLines = [];
+    rl.on('line', (line) => {
+      currentLineNumber++;
+      if (currentLineNumber >= beforeLineNumber && currentLineNumber <= afterLineNumber) {
+        // Append next line of code
+        collectedLines.push(line);
+      } else if (currentLineNumber > afterLineNumber) {
+        // No need to read further, immediately finish with what we got
+        rl.close();
+      }
+    });
+
+    rl.on('close', () => {
+      // Add highlight markup to source code
+      res.status(200).send(collectedLines.join('\n'));
+    });
+  });
+
   // `proxy` lets you to specify a fallback server during development.
   // Every unrecognized request will be forwarded to it.
   var proxy = require(paths.appPackageJson).proxy;
