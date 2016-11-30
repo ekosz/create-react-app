@@ -2,6 +2,15 @@ const codeFrame = require('babel-code-frame')
 const ansiHTML = require('./ansiHTML')
 const StackTraceResolve = require('stacktrace-resolve').default
 
+const errorHelpers = [
+  {
+    regex: /cannot read property 'setState' of (null|undefined)/i,
+    title: 'Trouble with unbound function that use setState?',
+    body: '[ADD DESCRIPTION OF GOTCHA AND WHAT TO DO HERE]',
+    link: 'https://facebook.github.io/react/docs/handling-events.html'
+  }
+]
+
 const CONTEXT_SIZE = 3
 
 const black = '#293238'
@@ -96,6 +105,24 @@ const preStyle = {
 
 const codeStyle = {
   'font-family': 'Consolas, Menlo, monospace',
+}
+
+const errorHelperStyle = {
+  'margin-top': '1em',
+  border: '1px solid rgba(0, 0, 0, 0.08)',
+  'border-radius': '4px',
+}
+
+const errorHelperTitleStyle = {
+  'padding': '1em',
+  'background-color': '',
+  'border-bottom': '1px solid rgba(0, 0, 0, 0.08)',
+  'font-size': '1.5em',
+}
+
+const errorHelperBodyStyle = {
+  'padding': '0 1em',
+  'background-color': '',
 }
 
 function calcWidth(width) {
@@ -293,6 +320,47 @@ function traceDiv(resolvedFrames) {
   return trace;
 }
 
+function findKnownError(errMessage) {
+  for (const helper of errorHelpers) {
+    if (helper.regex.test(errMessage)) {
+      return helper
+    }
+  }
+
+  return null;
+}
+
+function errorHelper(errMessage) {
+  const errorHelper = document.createElement('div')
+  const knownError = findKnownError(errMessage)
+
+  if (!knownError) return errorHelper;
+
+  applyStyles(errorHelper, errorHelperStyle)
+  const title = document.createElement('div')
+  title.appendChild(document.createTextNode(knownError.title))
+  applyStyles(title, errorHelperTitleStyle)
+  errorHelper.appendChild(title)
+
+  const body = document.createElement('p')
+  body.appendChild(document.createTextNode(knownError.body))
+  applyStyles(body, errorHelperBodyStyle)
+  errorHelper.appendChild(body)
+
+  if (knownError.link) {
+    const link = document.createElement('p')
+    applyStyles(link, errorHelperBodyStyle)
+    link.appendChild(document.createTextNode('Additional Reading: '))
+    const anchor = document.createElement('a');
+    anchor.appendChild(document.createTextNode(knownError.link))
+    anchor.href = knownError.link;
+    link.appendChild(anchor);
+    errorHelper.appendChild(link)
+  }
+
+  return errorHelper;
+}
+
 function render(error, name, message, resolvedFrames) {
   if (overlayReference !== null) {
     renderAdditional()
@@ -314,6 +382,9 @@ function render(error, name, message, resolvedFrames) {
   applyStyles(header, headerStyle)
   header.appendChild(document.createTextNode(`${name}: ${message}`))
   container.appendChild(header)
+
+  // Create error helper
+  container.appendChild(errorHelper(message));
 
   // Create trace
   container.appendChild(traceDiv(resolvedFrames))
